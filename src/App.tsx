@@ -83,6 +83,8 @@ const MIN_SPEED = 60;
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 400, height: 400 });
   const [snake, setSnake] = useState<Point[]>([{ x: 10, y: 10 }]);
   const [food, setFood] = useState<Point>({ x: 5, y: 5 });
   const [direction, setDirection] = useState<Direction>('RIGHT');
@@ -97,6 +99,23 @@ export default function App() {
   const lastUpdateRef = useRef<number>(0);
   const gameLoopRef = useRef<number>(0);
   const startingHighScoreRef = useRef<number>(0);
+
+  // Handle Canvas Resizing
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width } = entry.contentRect;
+        // Keep it square and respect max size
+        const size = Math.min(width, 600); // Max logical size
+        setCanvasSize({ width: size, height: size });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Load high score and streak
   useEffect(() => {
@@ -343,44 +362,100 @@ export default function App() {
   }, [snake, food]);
 
   return (
-    <div id="game-root" className="min-h-screen bg-[#0a0a0c] text-white flex flex-col items-center justify-center p-4 font-mono selection:bg-cyan-500/30">
-      {/* Header */}
-      <div className="w-full max-w-[440px] flex justify-between items-end mb-8 border-b border-white/10 pb-4">
-        <div>
-          <h1 className="text-4xl font-black tracking-tighter italic text-cyan-400 leading-none">
+    <div id="game-root" className="relative min-h-screen bg-[#0a0a0c] text-white flex flex-col items-center justify-center p-4 font-mono selection:bg-cyan-500/30 overflow-hidden">
+      {/* Background Animations */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        {/* Scanning horizontal line */}
+        <motion.div 
+          animate={{ y: ['-100%', '200%'] }}
+          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+          className="absolute top-0 left-0 w-full h-[1px] bg-cyan-500/10 shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+        />
+        
+        {/* Floating neon particles */}
+        {[...Array(6)].map((_, i) => (
+          <motion.div
+            key={i}
+            initial={{ 
+              x: Math.random() * 100 + '%', 
+              y: Math.random() * 100 + '%',
+              opacity: 0.1,
+              scale: 0.5
+            }}
+            animate={{ 
+              y: [null, (Math.random() * 100) + '%'],
+              opacity: [0.1, 0.3, 0.1],
+              scale: [0.5, 0.8, 0.5]
+            }}
+            transition={{ 
+              duration: 10 + Math.random() * 20, 
+              repeat: Infinity, 
+              ease: "easeInOut" 
+            }}
+            className="absolute w-2 h-2 bg-cyan-500/20 blur-sm rounded-full shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+          />
+        ))}
+
+        {/* Diagonal moving lines */}
+        <svg className="absolute inset-0 w-full h-full opacity-[0.03]">
+          <pattern id="diagonal-lines" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+             <line x1="0" y1="40" x2="40" y2="0" stroke="currentColor" strokeWidth="1" className="text-cyan-500" />
+          </pattern>
+          <rect width="100%" height="100%" fill="url(#diagonal-lines)">
+            <animateTransform 
+              attributeName="transform" 
+              type="translate" 
+              from="0 0" 
+              to="40 40" 
+              dur="10s" 
+              repeatCount="indefinite" 
+            />
+          </rect>
+        </svg>
+
+        {/* Radial glows in corners */}
+        <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-cyan-500/5 blur-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-rose-500/5 blur-[120px] translate-x-1/2 translate-y-1/2 rounded-full" />
+      </div>
+
+      <div className="relative z-10 flex flex-col items-center w-full max-w-2xl">
+        {/* Header */}
+      <div className="w-full flex justify-between items-end mb-4 md:mb-8 border-b border-white/10 pb-4">
+        <div className="flex-1">
+          <h1 className="text-2xl md:text-4xl font-black tracking-tighter italic text-cyan-400 leading-none">
             NEON<br />SNAKE
           </h1>
-          <div className="flex items-center gap-3 mt-2">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">
+          <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-2">
+            <p className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold whitespace-nowrap">
               Grid Protocol v2.0
             </p>
             {streak > 0 && (
               <motion.div 
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center gap-1 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20"
+                className="flex items-center gap-1 bg-cyan-500/10 px-1.5 md:px-2 py-0.5 rounded border border-cyan-500/20"
               >
                 <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" />
-                <span className="text-[9px] font-black text-cyan-400 uppercase tracking-widest">Streak: {streak}</span>
+                <span className="text-[8px] md:text-[9px] font-black text-cyan-400 uppercase tracking-widest whitespace-nowrap">Streak: {streak}</span>
               </motion.div>
             )}
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right flex-1">
           <div className="flex items-center justify-end gap-2 text-rose-500 mb-1">
             <Trophy size={14} className={isNewHighScore ? "animate-bounce text-cyan-400" : ""} />
-            <span className={`text-sm font-bold transition-colors ${isNewHighScore ? 'text-cyan-400' : ''}`}>
+            <span className={`text-xs md:text-sm font-bold transition-colors ${isNewHighScore ? 'text-cyan-400' : ''}`}>
               {highScore.toString().padStart(6, '0')}
             </span>
           </div>
-          <div className="text-3xl font-black text-white tabular-nums">
+          <div className="text-2xl md:text-3xl font-black text-white tabular-nums">
             {score.toString().padStart(6, '0')}
           </div>
         </div>
       </div>
 
       {/* Main Game Area */}
-      <div className="relative group">
+      <div ref={containerRef} className="relative group w-full aspect-square max-w-[500px]">
         {/* Decorative corner accents */}
         <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-cyan-500 z-10" />
         <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-cyan-500 z-10" />
@@ -390,9 +465,9 @@ export default function App() {
         <canvas
           id="game-canvas"
           ref={canvasRef}
-          width={400}
-          height={400}
-          className="bg-black/50 border border-white/5 shadow-2xl shadow-cyan-500/5 aspect-square w-full max-w-[400px] block"
+          width={canvasSize.width}
+          height={canvasSize.height}
+          className="bg-black/50 border border-white/5 shadow-2xl shadow-cyan-500/5 aspect-square w-full block rounded-sm"
         />
 
         {/* Overlay Screens */}
@@ -495,44 +570,44 @@ export default function App() {
       </div>
 
       {/* Controls & Footer */}
-      <div className="w-full max-w-[400px] mt-8 grid grid-cols-2 gap-8 h-32 items-center">
-        {/* Mobile-friendly on-screen controls or just visual feedback */}
-        <div className="grid grid-cols-3 grid-rows-2 gap-1 w-32 mx-auto">
+      <div className="w-full max-w-[500px] mt-6 md:mt-8 flex flex-col md:flex-row gap-6 items-center">
+        {/* Mobile-friendly on-screen controls */}
+        <div className="grid grid-cols-3 grid-rows-2 gap-1 w-full max-w-[160px]">
           <div />
           <button 
              onClick={() => status === 'PLAYING' && direction !== 'DOWN' && setNextDirection('UP')}
-             className={`flex items-center justify-center h-10 border border-white/10 ${direction === 'UP' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
+             className={`flex items-center justify-center h-12 rounded border border-white/10 active:bg-cyan-500 active:text-black transition-all ${direction === 'UP' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
           >
-            <ChevronUp size={16} />
+            <ChevronUp size={20} />
           </button>
           <div />
           <button 
              onClick={() => status === 'PLAYING' && direction !== 'RIGHT' && setNextDirection('LEFT')}
-             className={`flex items-center justify-center h-10 border border-white/10 ${direction === 'LEFT' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
+             className={`flex items-center justify-center h-12 rounded border border-white/10 active:bg-cyan-500 active:text-black transition-all ${direction === 'LEFT' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={20} />
           </button>
           <button 
              onClick={() => status === 'PLAYING' && direction !== 'UP' && setNextDirection('DOWN')}
-             className={`flex items-center justify-center h-10 border border-white/10 ${direction === 'DOWN' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
+             className={`flex items-center justify-center h-12 rounded border border-white/10 active:bg-cyan-500 active:text-black transition-all ${direction === 'DOWN' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
           >
-            <ChevronDown size={16} />
+            <ChevronDown size={20} />
           </button>
           <button 
              onClick={() => status === 'PLAYING' && direction !== 'LEFT' && setNextDirection('RIGHT')}
-             className={`flex items-center justify-center h-10 border border-white/10 ${direction === 'RIGHT' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
+             className={`flex items-center justify-center h-12 rounded border border-white/10 active:bg-cyan-500 active:text-black transition-all ${direction === 'RIGHT' ? 'bg-cyan-500/20 border-cyan-500' : 'bg-white/5'}`}
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={20} />
           </button>
         </div>
 
-        <div className="space-y-2 border-l border-white/10 pl-8">
-          <p className="text-[10px] text-white/50 uppercase leading-relaxed">
-            <strong className="text-white">SPACE</strong> TO START/PAUSE<br />
-            <strong className="text-white">ARROWS</strong> TO CONTROL<br />
-            <strong className="text-cyan-400">EAT</strong> PINK NODES
+        <div className="flex-1 space-y-3 border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-8 w-full">
+          <p className="text-[10px] text-white/50 uppercase leading-relaxed text-center md:text-left">
+            <span className="hidden md:inline"><strong className="text-white">SPACE</strong> TO START/PAUSE | </span>
+            <strong className="text-white">ARROWS</strong> TO CONTROL | 
+            <strong className="text-cyan-400 ml-1">EAT</strong> PINK NODES
           </p>
-          <div className="pt-2">
+          <div className="max-w-[200px] mx-auto md:mx-0">
              <div className="h-1 bg-white/5 w-full rounded-full overflow-hidden">
                 <motion.div 
                   className="h-full bg-cyan-500" 
@@ -545,6 +620,7 @@ export default function App() {
         </div>
       </div>
     </div>
+  </div>
   );
 }
 
