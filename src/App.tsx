@@ -17,6 +17,63 @@ type Point = { x: number; y: number };
 type Direction = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 type GameStatus = 'START' | 'PLAYING' | 'PAUSED' | 'GAMEOVER';
 
+// Sound Manager
+const sounds = {
+  ctx: null as AudioContext | null,
+
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+  },
+
+  play(freq: number, type: OscillatorType, duration: number, volume: number = 0.1) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    
+    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+    
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  },
+
+  eat() {
+    this.play(880, 'triangle', 0.1);
+  },
+
+  gameOver() {
+    if (!this.ctx) return;
+    this.play(150, 'sawtooth', 0.6, 0.2);
+    // Add a quick lower rumble
+    setTimeout(() => this.play(70, 'sawtooth', 0.4, 0.15), 100);
+  },
+
+  newHighScore() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    notes.forEach((note, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.frequency.setValueAtTime(note, now + i * 0.1);
+      gain.gain.setValueAtTime(0.1, now + i * 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.1 + 0.3);
+      osc.connect(gain);
+      gain.connect(this.ctx!.destination);
+      osc.start(now + i * 0.1);
+      osc.stop(now + i * 0.1 + 0.3);
+    });
+  }
+};
+
 // Constants
 const GRID_SIZE = 20;
 const CELL_SIZE = 20; // Will be responsive
@@ -33,15 +90,21 @@ export default function App() {
   const [status, setStatus] = useState<GameStatus>('START');
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [isNewHighScore, setIsNewHighScore] = useState(false);
   const [speed, setSpeed] = useState(INITIAL_SPEED);
   
   const lastUpdateRef = useRef<number>(0);
   const gameLoopRef = useRef<number>(0);
+  const startingHighScoreRef = useRef<number>(0);
 
-  // Load high score
+  // Load high score and streak
   useEffect(() => {
-    const saved = localStorage.getItem('snakeHighScore');
-    if (saved) setHighScore(parseInt(saved, 10));
+    const savedScore = localStorage.getItem('snakeHighScore');
+    if (savedScore) setHighScore(parseInt(savedScore, 10));
+    
+    const savedStreak = localStorage.getItem('snakeHighStreak');
+    if (savedStreak) setStreak(parseInt(savedStreak, 10));
   }, []);
 
   // Sync high score
@@ -49,8 +112,12 @@ export default function App() {
     if (score > highScore) {
       setHighScore(score);
       localStorage.setItem('snakeHighScore', score.toString());
+      if (!isNewHighScore && score > startingHighScoreRef.current) {
+        setIsNewHighScore(true);
+        sounds.newHighScore();
+      }
     }
-  }, [score, highScore]);
+  }, [score, highScore, isNewHighScore]);
 
   // Generate random food
   const generateFood = useCallback((currentSnake: Point[]) => {
@@ -68,12 +135,15 @@ export default function App() {
   }, []);
 
   const resetGame = () => {
+    sounds.init();
     setSnake([{ x: 10, y: 10 }]);
     setFood(generateFood([{ x: 10, y: 10 }]));
     setDirection('RIGHT');
     setNextDirection('RIGHT');
     setScore(0);
+    setIsNewHighScore(false);
     setSpeed(INITIAL_SPEED);
+    startingHighScoreRef.current = highScore;
     setStatus('PLAYING');
   };
 
@@ -115,6 +185,7 @@ export default function App() {
       // Food collision
       if (newHead.x === food.x && newHead.y === food.y) {
         setScore(s => s + 10);
+        sounds.eat();
         setFood(generateFood(newSnake));
         setSpeed(prev => Math.max(MIN_SPEED, prev - SPEED_INCREMENT));
         // Don't pop tail if eating
@@ -127,6 +198,22 @@ export default function App() {
   }, [food, nextDirection, generateFood]);
 
   // Game Loop
+  useEffect(() => {
+    if (status === 'GAMEOVER') {
+      sounds.gameOver();
+      if (score > startingHighScoreRef.current) {
+        setStreak(prev => {
+          const newStreak = prev + 1;
+          localStorage.setItem('snakeHighStreak', newStreak.toString());
+          return newStreak;
+        });
+      } else {
+        setStreak(0);
+        localStorage.setItem('snakeHighStreak', '0');
+      }
+    }
+  }, [status]);
+
   useEffect(() => {
     const loop = (time: number) => {
       if (status === 'PLAYING') {
@@ -170,7 +257,10 @@ export default function App() {
         case ' ': // Space for pause/start
           if (status === 'PLAYING') setStatus('PAUSED');
           else if (status === 'PAUSED') setStatus('PLAYING');
-          else if (status === 'START' || status === 'GAMEOVER') resetGame();
+          else if (status === 'START' || status === 'GAMEOVER') {
+            sounds.init();
+            resetGame();
+          }
           break;
       }
     };
@@ -260,14 +350,28 @@ export default function App() {
           <h1 className="text-4xl font-black tracking-tighter italic text-cyan-400 leading-none">
             NEON<br />SNAKE
           </h1>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 mt-2 font-bold">
-            Grid Protocol v2.0
-          </p>
+          <div className="flex items-center gap-3 mt-2">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-bold">
+              Grid Protocol v2.0
+            </p>
+            {streak > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-1 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20"
+              >
+                <div className="w-1 h-1 bg-cyan-500 rounded-full animate-pulse" />
+                <span className="text-[9px] font-black text-cyan-400 uppercase tracking-widest">Streak: {streak}</span>
+              </motion.div>
+            )}
+          </div>
         </div>
         <div className="text-right">
           <div className="flex items-center justify-end gap-2 text-rose-500 mb-1">
-            <Trophy size={14} />
-            <span className="text-sm font-bold">{highScore.toString().padStart(6, '0')}</span>
+            <Trophy size={14} className={isNewHighScore ? "animate-bounce text-cyan-400" : ""} />
+            <span className={`text-sm font-bold transition-colors ${isNewHighScore ? 'text-cyan-400' : ''}`}>
+              {highScore.toString().padStart(6, '0')}
+            </span>
           </div>
           <div className="text-3xl font-black text-white tabular-nums">
             {score.toString().padStart(6, '0')}
@@ -293,6 +397,19 @@ export default function App() {
 
         {/* Overlay Screens */}
         <AnimatePresence mode="wait">
+          {isNewHighScore && status === 'PLAYING' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
+            >
+              <div className="bg-cyan-500 text-black px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded shadow-[0_0_20px_rgba(6,182,212,0.5)]">
+                New Record Achieved
+              </div>
+            </motion.div>
+          )}
+
           {status !== 'PLAYING' && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -332,7 +449,7 @@ export default function App() {
               )}
 
               {status === 'GAMEOVER' && (
-                <div className="space-y-6">
+                <div className="space-y-6 w-full">
                   <div className="relative">
                     <RotateCcw className="w-12 h-12 text-rose-500 mx-auto" />
                     <motion.div 
@@ -344,15 +461,31 @@ export default function App() {
                       FINAL: {score}
                     </motion.div>
                   </div>
+                  
                   <div>
-                    <h2 className="text-2xl font-black italic text-rose-500">SYSTEM CRASH</h2>
-                    <p className="text-xs text-white/50 mt-2 font-bold">SEGMENTATION FAULT DETECTED</p>
+                    <h2 className={`text-2xl font-black italic ${isNewHighScore ? 'text-cyan-400' : 'text-rose-500'}`}>
+                      {isNewHighScore ? 'RECORDS BROKEN' : 'SYSTEM CRASH'}
+                    </h2>
+                    <p className="text-[10px] text-white/50 mt-2 font-bold uppercase tracking-widest">
+                      {isNewHighScore ? `HIGH SCORE STREAK: ${streak}` : 'SEGMENTATION FAULT DETECTED'}
+                    </p>
                   </div>
+
+                  {isNewHighScore && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-cyan-500/10 border border-cyan-500/20 p-3 rounded text-[10px] text-cyan-400 font-bold"
+                    >
+                      CONSECUTIVE UPLOAD SUCCESSFUL
+                    </motion.div>
+                  )}
+
                   <button
                     onClick={resetGame}
-                    className="w-full py-4 bg-rose-500 text-white font-black uppercase tracking-widest hover:bg-rose-400 transition-colors"
+                    className={`w-full py-4 font-black uppercase tracking-widest transition-colors ${isNewHighScore ? 'bg-cyan-500 hover:bg-cyan-400 text-black' : 'bg-rose-500 hover:bg-rose-400 text-white'}`}
                   >
-                    REBOOT
+                    {isNewHighScore ? 'NEXT ATTEMPT' : 'REBOOT'}
                   </button>
                 </div>
               )}
