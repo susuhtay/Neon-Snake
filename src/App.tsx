@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Play, RotateCcw, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trophy, Play, RotateCcw, Pause, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Zap, Target, Clock, BarChart3 } from 'lucide-react';
 
 // Types
 type Point = { x: number; y: number };
@@ -81,6 +81,15 @@ const INITIAL_SPEED = 150;
 const SPEED_INCREMENT = 2;
 const MIN_SPEED = 60;
 
+const getRank = (score: number) => {
+  if (score >= 1000) return { label: 'SS', color: 'text-yellow-400' };
+  if (score >= 500) return { label: 'S', color: 'text-cyan-400' };
+  if (score >= 300) return { label: 'A', color: 'text-purple-400' };
+  if (score >= 150) return { label: 'B', color: 'text-blue-400' };
+  if (score >= 50) return { label: 'C', color: 'text-green-400' };
+  return { label: 'D', color: 'text-white/40' };
+};
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,6 +104,9 @@ export default function App() {
   const [streak, setStreak] = useState(0);
   const [isNewHighScore, setIsNewHighScore] = useState(false);
   const [speed, setSpeed] = useState(INITIAL_SPEED);
+  const [nodesEaten, setNodesEaten] = useState(0);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [survivalTime, setSurvivalTime] = useState(0);
   
   const lastUpdateRef = useRef<number>(0);
   const gameLoopRef = useRef<number>(0);
@@ -160,6 +172,9 @@ export default function App() {
     setDirection('RIGHT');
     setNextDirection('RIGHT');
     setScore(0);
+    setNodesEaten(0);
+    setStartTime(Date.now());
+    setSurvivalTime(0);
     setIsNewHighScore(false);
     setSpeed(INITIAL_SPEED);
     startingHighScoreRef.current = highScore;
@@ -190,12 +205,14 @@ export default function App() {
         newHead.y >= GRID_SIZE
       ) {
         setStatus('GAMEOVER');
+        if (startTime) setSurvivalTime(Math.floor((Date.now() - startTime) / 1000));
         return prevSnake;
       }
 
       // Self collision
       if (prevSnake.some(segment => segment.x === newHead.x && segment.y === newHead.y)) {
         setStatus('GAMEOVER');
+        if (startTime) setSurvivalTime(Math.floor((Date.now() - startTime) / 1000));
         return prevSnake;
       }
 
@@ -204,6 +221,7 @@ export default function App() {
       // Food collision
       if (newHead.x === food.x && newHead.y === food.y) {
         setScore(s => s + 10);
+        setNodesEaten(n => n + 1);
         sounds.eat();
         setFood(generateFood(newSnake));
         setSpeed(prev => Math.max(MIN_SPEED, prev - SPEED_INCREMENT));
@@ -524,43 +542,58 @@ export default function App() {
               )}
 
               {status === 'GAMEOVER' && (
-                <div className="space-y-6 w-full">
-                  <div className="relative">
-                    <RotateCcw className="w-12 h-12 text-rose-500 mx-auto" />
-                    <motion.div 
-                      key={score}
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      className="absolute -top-4 -right-4 bg-rose-500 text-black px-2 py-1 text-[10px] font-black rounded-sm"
-                    >
-                      FINAL: {score}
-                    </motion.div>
+                <div className="space-y-8 w-full max-w-[320px]">
+                  <div className="relative py-4">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                       <BarChart3 size={160} />
+                    </div>
+                    <div className="relative z-10 flex flex-col items-center">
+                      <motion.div
+                        initial={{ scale: 2, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className={`text-7xl font-black italic ${getRank(score).color} drop-shadow-[0_0_20px_currentColor]`}
+                      >
+                        {getRank(score).label}
+                      </motion.div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.3em] mt-2 opacity-50">Operational Rank</p>
+                    </div>
                   </div>
                   
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white/5 border border-white/10 p-3 rounded text-left">
+                       <div className="flex items-center gap-2 text-rose-500 mb-1">
+                          <Target size={12} />
+                          <span className="text-[9px] font-black uppercase tracking-widest">Nodes</span>
+                       </div>
+                       <div className="text-xl font-black tabular-nums">{nodesEaten}</div>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 p-3 rounded text-left">
+                       <div className="flex items-center gap-2 text-cyan-400 mb-1">
+                          <Clock size={12} />
+                          <span className="text-[9px] font-black uppercase tracking-widest">Time</span>
+                       </div>
+                       <div className="text-xl font-black tabular-nums">{survivalTime}s</div>
+                    </div>
+                  </div>
+
                   <div>
-                    <h2 className={`text-2xl font-black italic ${isNewHighScore ? 'text-cyan-400' : 'text-rose-500'}`}>
+                    <h2 className={`text-2xl font-black italic glitch-text ${isNewHighScore ? 'text-cyan-400' : 'text-rose-500'}`} data-text={isNewHighScore ? 'RECORDS BROKEN' : 'SYSTEM CRASH'}>
                       {isNewHighScore ? 'RECORDS BROKEN' : 'SYSTEM CRASH'}
                     </h2>
-                    <p className="text-[10px] text-white/50 mt-2 font-bold uppercase tracking-widest">
-                      {isNewHighScore ? `HIGH SCORE STREAK: ${streak}` : 'SEGMENTATION FAULT DETECTED'}
+                    <p className="text-[10px] text-white/30 mt-2 font-bold uppercase tracking-[0.2em]">
+                      {isNewHighScore ? `Session Streak: ${streak}` : 'Critical Protocol Failure'}
                     </p>
                   </div>
 
-                  {isNewHighScore && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-cyan-500/10 border border-cyan-500/20 p-3 rounded text-[10px] text-cyan-400 font-bold"
-                    >
-                      CONSECUTIVE UPLOAD SUCCESSFUL
-                    </motion.div>
-                  )}
-
                   <button
                     onClick={resetGame}
-                    className={`w-full py-4 font-black uppercase tracking-widest transition-colors ${isNewHighScore ? 'bg-cyan-500 hover:bg-cyan-400 text-black' : 'bg-rose-500 hover:bg-rose-400 text-white'}`}
+                    className={`group relative w-full py-4 font-black uppercase tracking-widest transition-all overflow-hidden ${isNewHighScore ? 'bg-cyan-500 text-black' : 'bg-rose-500 text-white'}`}
                   >
-                    {isNewHighScore ? 'NEXT ATTEMPT' : 'REBOOT'}
+                    <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500 skew-x-12" />
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      <RotateCcw size={16} className="group-hover:rotate-[-45deg] transition-transform" />
+                      {isNewHighScore ? 'INITIATE NEXT PHASE' : 'FORCE REBOOT'}
+                    </span>
                   </button>
                 </div>
               )}
